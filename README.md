@@ -69,7 +69,6 @@ soma-viser --motions-dir /path/to/motions --port 8090
 
 - This repository includes reference SOMA BVH motions in `motions/` for immediate testing.
 - For large-scale motion data, use the [SEED dataset](https://huggingface.co/datasets/bones-studio/seed) (Skeletal Everyday Embodiment Dataset) by [Bones Studio](https://huggingface.co/bones-studio).
-- SEED provides large-scale motions on the SOMA uniform-proportion skeleton, and included G1 robot motion data was retargeted using SOMA Retargeter.
 
 ## References
 `soma_viser` borrows playback/UI ideas from `mjviser` and adapts them for SOMA motion inspection.

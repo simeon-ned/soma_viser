@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "soma-viser"
+version = "0.1.0"
+description = "Viser-based SOMA BVH skeleton viewer with motion controls."
+readme = "README.md"
+requires-python = ">=3.10,<3.14"
+dependencies = [
+  "numpy",
+  "viser>=1.0.26",
+  "warp-lang",
+  "soma-retargeter @ git+https://github.com/NVIDIA/soma-retargeter.git",
+]
+
+[project.scripts]
+soma-viser = "soma_viser.__main__:main"
+soma-viser-app = "soma_viser.__main__:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]

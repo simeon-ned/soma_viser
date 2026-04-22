@@ -14,19 +14,13 @@ It is designed as a practical visualization companion: load BVH motions, inspect
 
 ## Installation
 
-Recommended setup uses `mamba` + `pip`:
+You may install `soma_viser` as regular python package, following setup uses `mamba` + `pip`, but you may use `uv` as well:
 
 ```bash
 
 mamba create -n soma-viser python=3.12 -y
 mamba activate soma-viser
 pip install -e .
-```
-
-If your shell does not auto-enable `mamba activate`, initialize it once:
-
-```bash
-mamba init
 ```
 
 ## Run
@@ -46,10 +40,9 @@ soma-viser --motions-dir /path/to/motions --port 8090
 ---
 
 ## UI Overview
-
-<!-- Place your screen capture under assets/, for example:
-     assets/ui_overview.gif or assets/ui_overview.mp4 -->
-![Soma Viser UI Overview](assets/ui_overview.gif)
+<p align="center">
+  <video src="https://github.com/user-attachments/assets/a38334bd-b772-4696-bb48-14fecac844ef.mp4" width="100%" autoplay loop muted playsinline></video>
+</p>
 
 ### Motion tab
 

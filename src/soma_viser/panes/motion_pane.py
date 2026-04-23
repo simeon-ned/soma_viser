@@ -9,8 +9,8 @@ from typing import Any
 import viser
 
 from .context import PaneContext
-from ..motion import MotionEntry, index_bvh_files
-from ..viz.playback import update_speed_index
+from ..motion.library import MotionEntry, index_bvh_files
+from ..ui.playback import update_speed_index
 
 _MOTION_MAX_OPTIONS = 300
 _MOTION_FOLDER_SHOW_THRESHOLD = 120
@@ -23,6 +23,7 @@ class MotionPane:
   def __init__(self, context: PaneContext, pose_keyframes: dict[str, Path]) -> None:
     self.context = context
     self.viewer = context.viewer
+    self.actions = context.actions
     self.pose_keyframes = pose_keyframes
 
   def build_tab(self) -> None:
@@ -73,7 +74,7 @@ class MotionPane:
       selected = str(v._motion_dropdown.value)
       if selected.startswith("("):
         return
-      v._load_clip_by_relpath(selected)
+      self.actions.load_clip_by_relpath(selected)
 
     @refresh_btn.on_click
     def _(_) -> None:
@@ -83,33 +84,28 @@ class MotionPane:
     def _(_) -> None:
       if v._suppress_gui_updates:
         return
-      v._frame_idx = int(v._frame_slider.value)
-      v._needs_redraw = True
+      self.actions.set_frame_idx(int(v._frame_slider.value))
 
     @play_btn.on_click
     def _(_) -> None:
-      v._playing = not v._playing
-      play_btn.label = "Pause" if v._playing else "Play"
-      play_btn.icon = viser.Icon.PLAYER_PAUSE if v._playing else viser.Icon.PLAYER_PLAY
-      v._update_status_text()
+      playing = self.actions.toggle_play_pause()
+      self.actions.set_play_button_state(play_btn, playing)
 
     @speed_btn.on_click
     def _(event) -> None:
-      v._speed_idx = update_speed_index(v._speed_idx, event.target.value)
-      v._update_status_text()
+      self.actions.set_speed_idx(update_speed_index(v._speed_idx, event.target.value))
 
     @loop_cb.on_update
     def _(_) -> None:
-      v._loop = bool(loop_cb.value)
-      v._update_status_text()
+      self.actions.set_loop(bool(loop_cb.value))
 
     @pose_dd.on_update
     def _(_) -> None:
       pose_path = self.pose_keyframes.get(str(pose_dd.value))
       if pose_path is None or not pose_path.is_file():
-        v._update_status_text("Pose keyframe file not found.")
+        self.actions.update_status("Pose keyframe file not found.")
         return
-      v._load_clip_by_path(pose_path)
+      self.actions.load_clip_by_path(pose_path)
 
     self.refresh_motion_library()
 

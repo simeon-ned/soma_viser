@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
+from .actions import PaneActions
 from ..state.session import SessionState
 
 
@@ -14,3 +15,4 @@ class PaneContext:
 
   viewer: Any
   session: SessionState
+  actions: PaneActions

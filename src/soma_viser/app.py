@@ -1,7 +1,8 @@
-"""Interactive SOMA BVH viewer with Motion/Visualization/Controls tabs."""
+"""Interactive SOMA BVH viewer app and CLI entrypoint."""
 
 from __future__ import annotations
 
+import argparse
 import time
 from pathlib import Path
 from threading import RLock
@@ -10,22 +11,21 @@ from typing import Any
 import numpy as np
 import viser
 
+from .io.bvh import parse_bvh_channel_map
+from .motion.library import MotionClip, load_motion_clip
+from .panes.actions import PaneActions
 from .panes.context import PaneContext
 from .panes.controls_pane import ControlsPane
 from .panes.motion_pane import MotionPane
 from .panes.visualization_pane import VisualizationPane
-from .mesh_skinner import WarpMeshSkinner, try_load_soma_skeletal_mesh
-from .io_bvh import parse_bvh_channel_map
-from .motion import MotionClip, load_motion_clip
+from .render.mesh_skinner import WarpMeshSkinner, try_load_soma_skeletal_mesh
 from .render.pipeline import RenderPipeline
+from .render.skeleton_math import decode_joint_name
 from .state.session import PlaybackState, SessionState
-from .skeleton import (
-  decode_joint_name,
-)
-from .viz.joint_inspector import JointInspector
-from .viz.joints import resolve_hips_joint_name
-from .viz.playback import DEFAULT_SPEEDS, advance_playback
-from .viz.status import build_status_html
+from .ui.joint_inspector import JointInspector
+from .ui.joints import resolve_hips_joint_name
+from .ui.playback import DEFAULT_SPEEDS, advance_playback
+from .ui.status import build_status_html
 
 _SPEEDS = DEFAULT_SPEEDS
 POSE_KEYFRAMES: dict[str, Path] = {
@@ -96,7 +96,7 @@ class SomaViewer:
     self._bvh_channel_map: dict[str, tuple[int, list[str]]] = {}
     self._last_rendered_row: Any | None = None
 
-    pane_context = PaneContext(viewer=self, session=self._session)
+    pane_context = PaneContext(viewer=self, session=self._session, actions=PaneActions(self))
     self._motion_pane = MotionPane(pane_context, POSE_KEYFRAMES)
     self._visualization_pane = VisualizationPane(pane_context)
     self._controls_pane = ControlsPane(pane_context)
@@ -464,3 +464,38 @@ class SomaViewer:
       pass
     finally:
       self.server.stop()
+
+
+def _default_motions_dir() -> Path:
+  return Path(__file__).resolve().parents[2] / "motions"
+
+
+def main() -> None:
+  parser = argparse.ArgumentParser(
+    description="SOMA BVH viewer with Motion/Visualization/Controls tabs."
+  )
+  parser.add_argument(
+    "--motions-dir",
+    type=Path,
+    default=_default_motions_dir(),
+    help="Directory containing .bvh motion clips.",
+  )
+  parser.add_argument(
+    "--port",
+    type=int,
+    default=8080,
+    help="Viser server port (default: 8080).",
+  )
+  parser.add_argument(
+    "--up-axis",
+    choices=["+z", "+y"],
+    default="+z",
+    help="Scene up axis (default: +z).",
+  )
+  args = parser.parse_args()
+  viewer = SomaViewer(
+    motions_dir=args.motions_dir,
+    port=args.port,
+    up_axis=args.up_axis,
+  )
+  viewer.run()

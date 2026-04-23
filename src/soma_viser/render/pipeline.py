@@ -14,7 +14,7 @@ from ..render.skeleton_renderer import (
   sync_joint_controls_from_row,
   sync_joint_knobs,
 )
-from ..skeleton import (
+from ..render.skeleton_math import (
   build_bone_segments,
   decode_joint_name,
   euler_xyz_extrinsic_deg_to_wp_quat,

@@ -8,7 +8,7 @@ import numpy as np
 import viser
 
 from .context import PaneContext
-from ..io_bvh import estimate_bvh_units_per_meter, extract_bvh_motion_rows
+from ..io.bvh import estimate_bvh_units_per_meter, extract_bvh_motion_rows
 from ..render.joint_overrides import (
   euler_zyx_deg_to_wxyz,
   is_hips_like_joint,
@@ -23,6 +23,7 @@ class ControlsPane:
   def __init__(self, context: PaneContext) -> None:
     self.context = context
     self.viewer = context.viewer
+    self.actions = context.actions
 
   def build_tab(self) -> None:
     v = self.viewer
@@ -41,7 +42,7 @@ class ControlsPane:
     show_knobs_cb = v.server.gui.add_checkbox("Show joint gizmos", initial_value=v._show_joint_knobs)
 
     def _mark_redraw() -> None:
-      v._needs_redraw = True
+      self.actions.request_redraw()
 
     v._root_number_controls = (root_x, root_y, root_z)
     v._root_gizmo = v.server.scene.add_transform_controls(
@@ -209,9 +210,7 @@ class ControlsPane:
 
     @show_knobs_cb.on_update
     def _(_) -> None:
-      v._show_joint_knobs = bool(show_knobs_cb.value)
-      for h in v._main_joint_knobs.values():
-        h.visible = v._show_joint_knobs
+      self.actions.set_show_joint_knobs(bool(show_knobs_cb.value))
 
   def attach(self, *_args: Any, **_kwargs: Any) -> None:
     self.build_tab()

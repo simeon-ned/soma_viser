@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from .context import PaneContext
-from ..viz.joint_inspector import JointInspector
+from ..ui.joint_inspector import JointInspector
 
 
 class VisualizationPane:
@@ -14,6 +14,7 @@ class VisualizationPane:
   def __init__(self, context: PaneContext) -> None:
     self.context = context
     self.viewer = context.viewer
+    self.actions = context.actions
 
   def build_tab(self) -> None:
     v = self.viewer
@@ -32,35 +33,27 @@ class VisualizationPane:
 
     @show_skeleton_cb.on_update
     def _(_) -> None:
-      v._show_skeleton = bool(show_skeleton_cb.value)
-      v._line_handle.visible = v._show_skeleton
+      self.actions.set_show_skeleton(bool(show_skeleton_cb.value))
 
     @show_mesh_cb.on_update
     def _(_) -> None:
-      v._show_mesh = bool(show_mesh_cb.value)
-      v._needs_redraw = True
+      self.actions.set_show_mesh(bool(show_mesh_cb.value))
 
     @color_picker.on_update
     def _(_) -> None:
-      v._skeleton_color = tuple(int(c) for c in color_picker.value)
-      v._needs_redraw = True
+      self.actions.set_skeleton_color(tuple(int(c) for c in color_picker.value))
 
     @mesh_color_picker.on_update
     def _(_) -> None:
-      v._mesh_color = tuple(int(c) for c in mesh_color_picker.value)
-      v._needs_redraw = True
+      self.actions.set_mesh_color(tuple(int(c) for c in mesh_color_picker.value))
 
     @mesh_opacity_slider.on_update
     def _(_) -> None:
-      v._mesh_opacity = float(mesh_opacity_slider.value)
-      if v._mesh_handle is not None:
-        v._mesh_handle.opacity = v._mesh_opacity
-      v._needs_redraw = True
+      self.actions.set_mesh_opacity(float(mesh_opacity_slider.value))
 
     @line_width_slider.on_update
     def _(_) -> None:
-      v._line_width = float(line_width_slider.value)
-      v._line_handle.line_width = v._line_width
+      self.actions.set_line_width(float(line_width_slider.value))
 
     v._joint_inspector = JointInspector(
       v.server,
@@ -76,17 +69,11 @@ class VisualizationPane:
 
     @frame_text_cb.on_update
     def _(_) -> None:
-      v._show_frame_text = bool(frame_text_cb.value)
-      if v._joint_inspector is not None:
-        v._joint_inspector.show_frame_text = v._show_frame_text
-        v._joint_inspector.update_text_visibility()
+      self.actions.set_show_frame_text(bool(frame_text_cb.value))
 
     @frame_text_full_info_cb.on_update
     def _(_) -> None:
-      v._show_frame_text_full_info = bool(frame_text_full_info_cb.value)
-      if v._joint_inspector is not None:
-        v._joint_inspector.show_frame_text_full_info = v._show_frame_text_full_info
-      v._needs_redraw = True
+      self.actions.set_show_frame_text_full_info(bool(frame_text_full_info_cb.value))
 
   def attach(self, *_args: Any, **_kwargs: Any) -> None:
     self.build_tab()

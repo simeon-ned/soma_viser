@@ -26,6 +26,8 @@ from .viz.status import build_status_html
 
 _SPEEDS = DEFAULT_SPEEDS
 _MOTION_MAX_OPTIONS = 300
+_MOTION_FOLDER_SHOW_THRESHOLD = 120
+_MOTION_SEARCH_DEBOUNCE_SEC = 0.2
 
 _POSE_KEYFRAMES: dict[str, Path] = {
   "Calibration (frame0)": Path(__file__).resolve().parent / "assets" / "poses" / "soma_zero.bvh",
@@ -210,6 +212,9 @@ class SomaViewer:
     self._motion_entries: list[MotionEntry] = []
     self._motion_filtered_entries: list[MotionEntry] = []
     self._motion_entry_by_relpath: dict[str, MotionEntry] = {}
+    self._motion_folder_counts: dict[str, int] = {}
+    self._motion_search_pending = False
+    self._motion_search_deadline = 0.0
     self._suppress_motion_ui = False
     self._joint_inspector: JointInspector | None = None
     self._main_joint_controls: dict[str, Any] = {}
@@ -277,7 +282,8 @@ class SomaViewer:
 
     @self._motion_search_text.on_update
     def _(_) -> None:
-      self._apply_motion_filters()
+      self._motion_search_pending = True
+      self._motion_search_deadline = time.perf_counter() + _MOTION_SEARCH_DEBOUNCE_SEC
 
     @self._motion_folder_dropdown.on_update
     def _(_) -> None:
@@ -336,10 +342,14 @@ class SomaViewer:
     self._motion_entries = index_bvh_files(self.motions_dir, recursive=True)
     self._motion_entry_by_relpath = {e.rel_path: e for e in self._motion_entries}
 
+    folder_counts: dict[str, int] = {}
     folder_names = {"(all folders)"}
     for entry in self._motion_entries:
       parent = Path(entry.rel_path).parent.as_posix()
-      folder_names.add(parent if parent not in ("", ".") else ".")
+      parent = parent if parent not in ("", ".") else "root"
+      folder_names.add(parent)
+      folder_counts[parent] = folder_counts.get(parent, 0) + 1
+    self._motion_folder_counts = folder_counts
     folder_options = sorted(folder_names, key=lambda v: (v != "(all folders)", v.lower()))
 
     if self._motion_folder_dropdown is not None:
@@ -363,14 +373,31 @@ class SomaViewer:
       folder = str(self._motion_folder_dropdown.value)
 
     terms = [t for t in query.split() if t]
-    filtered: list[MotionEntry] = []
+    query_matches: list[MotionEntry] = []
     for entry in self._motion_entries:
       rel = entry.rel_path.lower()
-      parent = Path(entry.rel_path).parent.as_posix()
-      parent = parent if parent not in ("", ".") else "."
-      if folder != "(all folders)" and parent != folder:
-        continue
       if terms and not all(term in rel for term in terms):
+        continue
+      query_matches.append(entry)
+
+    has_subfolders = any(k != "root" for k in self._motion_folder_counts.keys())
+    show_folder = len(query_matches) > _MOTION_FOLDER_SHOW_THRESHOLD and has_subfolders
+
+    if self._motion_folder_dropdown is not None:
+      self._motion_folder_dropdown.visible = show_folder
+      if not show_folder and folder != "(all folders)":
+        folder = "(all folders)"
+        self._suppress_motion_ui = True
+        try:
+          self._motion_folder_dropdown.value = "(all folders)"
+        finally:
+          self._suppress_motion_ui = False
+
+    filtered: list[MotionEntry] = []
+    for entry in query_matches:
+      parent = Path(entry.rel_path).parent.as_posix()
+      parent = parent if parent not in ("", ".") else "root"
+      if folder != "(all folders)" and parent != folder:
         continue
       filtered.append(entry)
     self._motion_filtered_entries = filtered
@@ -1054,6 +1081,10 @@ class SomaViewer:
     self._update_status_text()
 
   def _tick(self, dt: float) -> None:
+    if self._motion_search_pending and time.perf_counter() >= self._motion_search_deadline:
+      self._motion_search_pending = False
+      self._apply_motion_filters()
+
     if self._clip is None:
       return
     clip = self._clip

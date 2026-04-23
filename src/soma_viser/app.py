@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import argparse
 import time
 from pathlib import Path
 from threading import RLock
@@ -11,21 +10,19 @@ from typing import Any
 import numpy as np
 import viser
 
-from .io.bvh import parse_bvh_channel_map
-from .motion.library import MotionClip, load_motion_clip
-from .panes.actions import PaneActions
-from .panes.context import PaneContext
-from .panes.controls_pane import ControlsPane
-from .panes.motion_pane import MotionPane
-from .panes.visualization_pane import VisualizationPane
-from .render.mesh_skinner import WarpMeshSkinner, try_load_soma_skeletal_mesh
+from .core.motion import MotionClip, load_motion_clip, parse_bvh_channel_map
+from .core.playback import DEFAULT_SPEEDS, advance_playback
+from .panes.common import PaneActions, PaneContext
+from .panes.controls import ControlsPane
+from .panes.motion import MotionPane, build_status_html
+from .panes.visualization import VisualizationPane
+from .core.joint_overrides import resolve_hips_joint_name
+from .core.state import PlaybackState, SessionState
+from .render.mesh import WarpMeshSkinner, try_load_soma_skeletal_mesh
 from .render.pipeline import RenderPipeline
-from .render.skeleton_math import decode_joint_name
-from .state.session import PlaybackState, SessionState
-from .ui.joint_inspector import JointInspector
-from .ui.joints import resolve_hips_joint_name
-from .ui.playback import DEFAULT_SPEEDS, advance_playback
-from .ui.status import build_status_html
+from .render.skeleton import decode_joint_name
+from .panes.joint_inspector import JointInspector
+from .core.math import euler_zyx_deg_to_wxyz, wxyz_to_euler_zyx_deg
 
 _SPEEDS = DEFAULT_SPEEDS
 POSE_KEYFRAMES: dict[str, Path] = {
@@ -410,6 +407,46 @@ class SomaViewer:
   def _scale_about_pivot(self, xyz: np.ndarray, pivot: np.ndarray, s: float) -> np.ndarray:
     return pivot + float(s) * (xyz - pivot)
 
+  def _sync_joint_controls_from_row(self, row: np.ndarray, packed_transform_array: bool) -> None:
+    """Refresh joint control widgets from the rendered row pose."""
+    import warp as wp
+
+    self._suppress_joint_ui = True
+    try:
+      for jname, ctrl in list(self._main_joint_controls.items()):
+        jidx = self._joint_name_to_idx.get(jname)
+        if jidx is None:
+          continue
+        if packed_transform_array:
+          qx = float(row[jidx, 3])
+          qy = float(row[jidx, 4])
+          qz = float(row[jidx, 5])
+          qw = float(row[jidx, 6])
+          eul = wxyz_to_euler_zyx_deg((qw, qx, qy, qz))
+        else:
+          qr = wp.transform_get_rotation(row[jidx])
+          eul = wxyz_to_euler_zyx_deg((float(qr[3]), float(qr[0]), float(qr[1]), float(qr[2])))
+        self._main_joint_display_deg[jname] = np.asarray(eul, dtype=np.float64)
+        ctrl.value = (float(eul[0]), float(eul[1]), float(eul[2]))
+    finally:
+      self._suppress_joint_ui = False
+
+  def _sync_joint_knobs(self, xyz: np.ndarray) -> None:
+    """Update joint knob transforms from latest global joint positions."""
+    self._suppress_joint_ui = True
+    try:
+      for jname, knob in list(self._main_joint_knobs.items()):
+        jidx = self._joint_name_to_idx.get(jname)
+        if jidx is None:
+          continue
+        p = xyz[jidx]
+        knob.position = (float(p[0]), float(p[1]), float(p[2]))
+        disp = self._main_joint_display_deg.get(jname, np.zeros(3, dtype=np.float64))
+        knob.wxyz = euler_zyx_deg_to_wxyz(disp)
+        knob.visible = self._show_joint_knobs
+    finally:
+      self._suppress_joint_ui = False
+
   def _tick(self, dt: float) -> None:
     self._motion_pane.tick(dt)
     self._visualization_pane.tick(dt)
@@ -439,7 +476,26 @@ class SomaViewer:
 
     if self._needs_redraw:
       with self._lock:
-        self._render_pipeline.redraw(self._frame_idx)
+        frame_result = self._render_pipeline.redraw(self._frame_idx)
+      if frame_result is not None:
+        self._last_rendered_row = np.copy(frame_result.row)
+        self._sync_joint_controls_from_row(frame_result.row, frame_result.packed_transform_array)
+        if self._joint_inspector is not None:
+          # Inspector labels/frames are UI presentation concerns.
+          self._joint_inspector.render(
+            self._joint_name_to_idx,
+            frame_result.xyz,
+            frame_result.quat_xyzw,
+          )
+        self._sync_joint_knobs(frame_result.xyz)
+        self._frame_idx = frame_result.frame_idx
+        self._suppress_gui_updates = True
+        try:
+          if self._frame_slider is not None:
+            self._frame_slider.value = self._frame_idx
+        finally:
+          self._suppress_gui_updates = False
+        self._update_status_text()
       self._needs_redraw = False
 
   def run(self) -> None:
@@ -466,36 +522,3 @@ class SomaViewer:
       self.server.stop()
 
 
-def _default_motions_dir() -> Path:
-  return Path(__file__).resolve().parents[2] / "motions"
-
-
-def main() -> None:
-  parser = argparse.ArgumentParser(
-    description="SOMA BVH viewer with Motion/Visualization/Controls tabs."
-  )
-  parser.add_argument(
-    "--motions-dir",
-    type=Path,
-    default=_default_motions_dir(),
-    help="Directory containing .bvh motion clips.",
-  )
-  parser.add_argument(
-    "--port",
-    type=int,
-    default=8080,
-    help="Viser server port (default: 8080).",
-  )
-  parser.add_argument(
-    "--up-axis",
-    choices=["+z", "+y"],
-    default="+z",
-    help="Scene up axis (default: +z).",
-  )
-  args = parser.parse_args()
-  viewer = SomaViewer(
-    motions_dir=args.motions_dir,
-    port=args.port,
-    up_axis=args.up_axis,
-  )
-  viewer.run()

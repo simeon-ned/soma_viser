@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
-from .context import PaneContext
-from ..ui.joint_inspector import JointInspector
+from .common import PaneContext
+from .joint_inspector import JointInspector
 
 
 class VisualizationPane:

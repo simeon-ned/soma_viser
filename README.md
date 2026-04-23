@@ -1,16 +1,18 @@
 # Soma Viser
 
 `soma_viser` is a web-based SOMA motion viewer built on [Viser](https://github.com/nerfstudio-project/viser).
-It is designed as a practical visualization companion: load BVH motions, inspect skeleton/mesh behavior, debug joint frames, and validate trajectories before or after retargeting. It can also be reused as a building block in your own Viser-based applications.
+The primary goal of this project is integration into Viser-based pipelines, where it acts as an interactive inspection/debug stage for SOMA trajectories before and after retargeting. It can also run as a standalone viewer for day-to-day motion exploration. The repository includes reference SOMA BVH motions in `motions/` for immediate testing, and for large-scale workflows it is designed to pair with the [SEED dataset](https://huggingface.co/datasets/bones-studio/seed) (Skeletal Everyday Embodiment Dataset) by [Bones Studio](https://huggingface.co/bones-studio).
 
 ## What It Provides
 
 - Interactive BVH playback with scrubber, play/pause, loop, and stepped speed controls
+- Trajectory search and folder-based filtering for large motion libraries
 - SOMA skeleton rendering
 - Optional SOMA skinned mesh rendering
 - Grouped joint-frame inspector (`Body / Head / Arms / Hands / Legs / Other`)
 - In-scene frame labels with compact/full text modes
 - Root/scale/alignment controls for quick pose inspection
+- Joint controls (main joints, non-fingers) with gizmo-based adjustments and BVH export
 
 ## Installation
 
@@ -47,6 +49,7 @@ soma-viser --motions-dir /path/to/motions --port 8090
 ### Motion tab
 
 - select trajectory (`.bvh`)
+- search/filter trajectories
 - frame timeline + playback controls
 - playback state information (clip/frame/speed/FPS/mesh status)
 
@@ -62,13 +65,23 @@ soma-viser --motions-dir /path/to/motions --port 8090
 - root offset (`x`, `y`, `z`)
 - body scale
 - alignment rotation (`x`, `y`, `z` in degrees)
+- joint controls and joint gizmos (main joints, no fingers)
 
 ---
 
-## Motion Data
+## Architecture Map
 
-- This repository includes reference SOMA BVH motions in `motions/` for immediate testing.
-- For large-scale motion data, use the [SEED dataset](https://huggingface.co/datasets/bones-studio/seed) (Skeletal Everyday Embodiment Dataset) by [Bones Studio](https://huggingface.co/bones-studio).
+Code is organized around three main module groups:
+
+- `soma_viser/panes/` - UI/presentation layer (tab construction, callbacks, inspector widgets)
+- `soma_viser/core/` - non-UI logic (motion loading/parsing/export, playback/state, math helpers, joint override logic)
+- `soma_viser/render/` - rendering layer (frame pipeline plus skeleton/mesh drawing)
+
+Guideline used in this project: 
+
+- If code manipulates GUI widgets or scene labels directly, it belongs in `panes`.
+- If code is reusable logic without UI handles, it belongs in `core`.
+- If code computes or applies renderable geometry/transforms, it belongs in `render`.
 
 ## References
 `soma_viser` borrows playback/UI ideas from `mjviser` and adapts them for SOMA motion inspection.

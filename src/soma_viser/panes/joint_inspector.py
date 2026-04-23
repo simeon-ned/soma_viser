@@ -1,9 +1,11 @@
-"""Joint frame inspector UI and scene helpers."""
+"""Joint frame inspector pane UI and scene helpers."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any
+
+import numpy as np
 
 
 @dataclass(slots=True)
@@ -103,6 +105,34 @@ class JointInspector:
               self.needs_redraw = True
 
     self.needs_redraw = True
+
+  def render(self, joint_name_to_idx: dict[str, int], xyz: np.ndarray, quat_xyzw: np.ndarray) -> None:
+    """Update all joint frame handles and labels in the inspector."""
+    for row in self.rows:
+      if not row.checkbox.value:
+        row.frame_handle.visible = False
+        row.scene_label.visible = False
+        continue
+      idx = joint_name_to_idx.get(row.joint_name)
+      if idx is None:
+        row.frame_handle.visible = False
+        row.scene_label.visible = False
+        continue
+      p = xyz[idx]
+      q = quat_xyzw[idx]
+      row.frame_handle.position = (float(p[0]), float(p[1]), float(p[2]))
+      row.frame_handle.wxyz = (float(q[3]), float(q[0]), float(q[1]), float(q[2]))
+      row.frame_handle.visible = True
+      if self.show_frame_text_full_info:
+        row.scene_label.text = (
+          f"{row.joint_name}\n"
+          f"xyz: ({p[0]:.3f}, {p[1]:.3f}, {p[2]:.3f})\n"
+          f"quat: ({q[0]:.3f}, {q[1]:.3f}, {q[2]:.3f}, {q[3]:.3f})"
+        )
+      else:
+        row.scene_label.text = row.joint_name
+      row.scene_label.position = (float(p[0] + 0.02), float(p[1] + 0.02), float(p[2] + 0.02))
+      row.scene_label.visible = self.show_frame_text
 
   def update_text_visibility(self) -> None:
     for row in self.rows:

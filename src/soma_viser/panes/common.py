@@ -1,10 +1,13 @@
-"""Small action/service layer used by panes."""
+"""Shared pane context and action helpers."""
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import viser
+
+from ..core.state import SessionState
 
 
 class PaneActions:
@@ -88,3 +91,12 @@ class PaneActions:
   def set_play_button_state(self, button: viser.GuiButtonHandle, playing: bool) -> None:
     button.label = "Pause" if playing else "Play"
     button.icon = viser.Icon.PLAYER_PAUSE if playing else viser.Icon.PLAYER_PLAY
+
+
+@dataclass(frozen=True)
+class PaneContext:
+  """Dependencies shared across pane modules."""
+
+  viewer: Any
+  session: SessionState
+  actions: PaneActions

@@ -32,28 +32,23 @@ def is_hips_like_joint(name: str) -> bool:
   return lname in ("hips", "hip", "pelvis", "root", "rootjoint")
 
 
-def euler_zyx_deg_to_wxyz(euler_deg: np.ndarray) -> tuple[float, float, float, float]:
-  rz = float(np.radians(euler_deg[0]))
-  ry = float(np.radians(euler_deg[1]))
-  rx = float(np.radians(euler_deg[2]))
-  so3 = tf.SO3.from_z_radians(rz) @ tf.SO3.from_y_radians(ry) @ tf.SO3.from_x_radians(rx)
-  w, x, y, z = so3.wxyz
-  return (float(w), float(x), float(y), float(z))
+def resolve_hips_joint_name(joint_names: list[str]) -> str | None:
+  """Resolve the best hips/root joint candidate from joint names."""
+  if not joint_names:
+    return None
 
+  lower_to_name = {n.lower(): n for n in joint_names}
+  exact_keys = ("hips", "hip", "pelvis", "root", "rootjoint")
+  for key in exact_keys:
+    if key in lower_to_name:
+      return lower_to_name[key]
 
-def wxyz_to_euler_zyx_deg(wxyz: tuple[float, float, float, float]) -> np.ndarray:
-  r = tf.SO3(wxyz=np.asarray(wxyz, dtype=np.float64)).as_matrix()
-  sy = np.sqrt(r[0, 0] * r[0, 0] + r[1, 0] * r[1, 0])
-  singular = sy < 1e-8
-  if not singular:
-    rz = np.arctan2(r[1, 0], r[0, 0])
-    ry = np.arctan2(-r[2, 0], sy)
-    rx = np.arctan2(r[2, 1], r[2, 2])
-  else:
-    rz = np.arctan2(-r[0, 1], r[1, 1])
-    ry = np.arctan2(-r[2, 0], sy)
-    rx = 0.0
-  return np.array([np.degrees(rz), np.degrees(ry), np.degrees(rx)], dtype=np.float64)
+  lower_names = [n.lower() for n in joint_names]
+  for key in exact_keys:
+    for i, lname in enumerate(lower_names):
+      if key in lname:
+        return joint_names[i]
+  return joint_names[0]
 
 
 def apply_joint_overrides_to_row(

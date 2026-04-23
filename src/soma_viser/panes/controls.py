@@ -7,14 +7,10 @@ from typing import Any
 import numpy as np
 import viser
 
-from .context import PaneContext
-from ..io.bvh import estimate_bvh_units_per_meter, extract_bvh_motion_rows
-from ..render.joint_overrides import (
-  euler_zyx_deg_to_wxyz,
-  is_hips_like_joint,
-  is_main_joint,
-  wxyz_to_euler_zyx_deg,
-)
+from .common import PaneContext
+from ..core.joint_overrides import is_main_joint
+from ..core.math import euler_zyx_deg_to_wxyz, wxyz_to_euler_zyx_deg
+from ..core.motion import export_current_pose_bvh
 
 
 class ControlsPane:
@@ -126,84 +122,7 @@ class ControlsPane:
 
     @export_btn.on_click
     def _(_) -> None:
-      if v._clip is None:
-        export_status.value = "No clip loaded."
-        return
-      if not v._clip.path.is_file():
-        export_status.value = "Source BVH not found."
-        return
-      try:
-        lines, row_start = extract_bvh_motion_rows(v._clip.path)
-        frame_idx = 0 if v._frame_idx >= max(1, v._clip.num_frames) else int(v._frame_idx)
-        src_row_idx = row_start + frame_idx
-        if src_row_idx >= len(lines):
-          src_row_idx = row_start
-        src_vals = [float(x) for x in lines[src_row_idx].strip().split()]
-        out_vals = list(src_vals)
-        bvh_units_per_meter = estimate_bvh_units_per_meter(src_vals, v._bvh_channel_map)
-        row_live = v._last_rendered_row
-        if row_live is None:
-          export_status.value = "No rendered pose cached yet."
-          return
-        row_arr = np.asarray(row_live)
-        packed_transform_array = (
-          row_arr.ndim == 2
-          and row_arr.shape[0] == len(v._joint_names)
-          and row_arr.shape[1] >= 7
-          and row_arr.dtype.kind in "fc"
-        )
-        import warp as wp
-
-        for jname, jidx in v._joint_name_to_idx.items():
-          info = v._bvh_channel_map.get(jname)
-          if info is None:
-            continue
-          start, labels = info
-          ch_idx = {lbl: start + i for i, lbl in enumerate(labels)}
-          if packed_transform_array:
-            qx, qy, qz, qw = (
-              float(row_live[jidx, 3]),
-              float(row_live[jidx, 4]),
-              float(row_live[jidx, 5]),
-              float(row_live[jidx, 6]),
-            )
-          else:
-            ti = row_live[jidx]
-            qr = wp.transform_get_rotation(ti)
-            qx, qy, qz, qw = float(qr[0]), float(qr[1]), float(qr[2]), float(qr[3])
-          eul = wxyz_to_euler_zyx_deg((qw, qx, qy, qz))
-          if is_hips_like_joint(jname):
-            if "Xposition" in ch_idx:
-              out_vals[ch_idx["Xposition"]] = float(src_vals[ch_idx["Xposition"]]) + float(v._root_offset[0]) * bvh_units_per_meter
-            if "Yposition" in ch_idx:
-              out_vals[ch_idx["Yposition"]] = float(src_vals[ch_idx["Yposition"]]) + float(v._root_offset[1]) * bvh_units_per_meter
-            if "Zposition" in ch_idx:
-              out_vals[ch_idx["Zposition"]] = float(src_vals[ch_idx["Zposition"]]) + float(v._root_offset[2]) * bvh_units_per_meter
-          if "Zrotation" in ch_idx:
-            out_vals[ch_idx["Zrotation"]] = float(eul[0])
-          if "Yrotation" in ch_idx:
-            out_vals[ch_idx["Yrotation"]] = float(eul[1])
-          if "Xrotation" in ch_idx:
-            out_vals[ch_idx["Xrotation"]] = float(eul[2])
-
-        header = lines[:row_start]
-        frame_time = 1.0 / max(1e-6, float(v._clip.sample_rate))
-        for i, line in enumerate(header):
-          if line.strip().startswith("Frames:"):
-            header[i] = "Frames: 1"
-          elif line.strip().startswith("Frame Time:"):
-            header[i] = f"Frame Time: {frame_time:.6f}"
-        out_name = export_name.value.strip() or "pose_export.bvh"
-        if not out_name.endswith(".bvh"):
-          out_name += ".bvh"
-        out_dir = v.motions_dir / "exports"
-        out_dir.mkdir(parents=True, exist_ok=True)
-        out_path = out_dir / out_name
-        out_text = "\n".join(header + [" ".join(f"{value:.9g}" for value in out_vals)]) + "\n"
-        out_path.write_text(out_text, encoding="utf-8")
-        export_status.value = f"Saved: {out_path}"
-      except Exception as exc:  # pragma: no cover - UI-facing error path
-        export_status.value = f"Export failed: {exc}"
+      export_status.value = export_current_pose_bvh(v, str(export_name.value))
 
     with v.server.gui.add_folder("Joint controls (main, no fingers)"):
       v._joint_controls_folder = v.server.gui.add_folder("Joint list")

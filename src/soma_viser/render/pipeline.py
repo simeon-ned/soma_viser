@@ -2,25 +2,31 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
 
-from ..render.inspector_renderer import render_joint_inspector
-from ..render.joint_overrides import apply_joint_overrides_to_row
-from ..render.mesh_renderer import render_body_mesh
-from ..render.skeleton_renderer import (
-  render_skeleton,
-  sync_joint_controls_from_row,
-  sync_joint_knobs,
-)
-from ..render.skeleton_math import (
+from ..core.joint_overrides import apply_joint_overrides_to_row
+from ..render.mesh import render_body_mesh
+from ..render.skeleton import (
   build_bone_segments,
   decode_joint_name,
   euler_xyz_extrinsic_deg_to_wp_quat,
   joint_xyz_quat_from_globals,
+  render_skeleton,
 )
 
+
+@dataclass
+class RenderFrameResult:
+  """Render output data needed by non-render UI flows."""
+
+  frame_idx: int
+  row: np.ndarray
+  packed_transform_array: bool
+  xyz: np.ndarray
+  quat_xyzw: np.ndarray
 
 class RenderPipeline:
   """Single-frame rendering pipeline for SomaViewer."""
@@ -28,10 +34,10 @@ class RenderPipeline:
   def __init__(self, viewer: Any) -> None:
     self.viewer = viewer
 
-  def redraw(self, frame_idx: int) -> None:
+  def redraw(self, frame_idx: int) -> RenderFrameResult | None:
     v = self.viewer
     if v._clip is None:
-      return
+      return None
     import warp as wp
 
     clip = v._clip
@@ -43,8 +49,6 @@ class RenderPipeline:
       main_joint_overrides_deg=v._main_joint_overrides_deg,
       joint_name_to_idx=v._joint_name_to_idx,
     )
-    v._last_rendered_row = np.copy(row)
-    sync_joint_controls_from_row(v, row, packed_transform_array)
 
     local_transforms = [row[i] for i in range(clip.skeleton.num_joints)]
     q_align = euler_xyz_extrinsic_deg_to_wp_quat(*v._align_euler.tolist())
@@ -60,14 +64,11 @@ class RenderPipeline:
       [decode_joint_name(clip.skeleton.joint_names[i]) for i in range(clip.skeleton.num_joints)],
     )
     render_skeleton(v, segments)
-    render_joint_inspector(v, xyz, quat_xyzw)
-    sync_joint_knobs(v, xyz)
     render_body_mesh(v, clip, row, root_tx, pivot)
-
-    v._frame_idx = frame
-    v._suppress_gui_updates = True
-    try:
-      v._frame_slider.value = frame
-    finally:
-      v._suppress_gui_updates = False
-    v._update_status_text()
+    return RenderFrameResult(
+      frame_idx=frame,
+      row=np.copy(row),
+      packed_transform_array=packed_transform_array,
+      xyz=xyz,
+      quat_xyzw=quat_xyzw,
+    )

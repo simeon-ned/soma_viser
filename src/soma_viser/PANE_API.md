@@ -1,26 +1,30 @@
-## Controller Reuse API
+## Pane Reuse API
 
 This document defines the stable API surface intended for downstream integrations (for example `humo_target`).
 
-### Controllers
+### Panes
 
-- `MotionController` in `soma_viser.controllers.motion_controller`
-- `VisualizationController` in `soma_viser.controllers.visualization_controller`
-- `ControlsController` in `soma_viser.controllers.controls_controller`
+- `MotionPane` in `soma_viser.panes.motion_pane`
+- `VisualizationPane` in `soma_viser.panes.visualization_pane`
+- `ControlsPane` in `soma_viser.panes.controls_pane`
 
-Each controller exposes the same lifecycle contract:
+Each pane exposes the same lifecycle contract:
 
 - `attach(gui_tab, server, session_state)`  
-  Build controller-owned GUI controls and register callbacks.
+  Build pane-owned GUI controls and register callbacks.
 - `tick(dt)`  
-  Advance controller-local runtime work (debounce/poll/update hooks).
+  Advance pane-local runtime work (debounce/poll/update hooks).
 - `dispose()`  
-  Release controller resources if needed.
+  Release pane resources if needed.
 
 ### Current Session Model
 
-- `PlaybackState` in `soma_viser.state.session`
-  - `playing`, `loop`, `speed_idx`, `accumulator`, `frame_idx`, `needs_redraw`
+- `SessionState` in `soma_viser.state.session`
+  - `playback: PlaybackState`
+  - `visual: VisualizationState`
+  - `motion: MotionLibraryState`
+- `PaneContext` in `soma_viser.panes.context`
+  - shared dependencies passed to panes (`viewer`, `session`)
 
 ### Render Pipeline
 

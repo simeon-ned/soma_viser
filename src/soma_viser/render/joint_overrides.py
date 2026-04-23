@@ -1,4 +1,4 @@
-"""Joint override math utilities shared by controllers/renderers."""
+"""Joint override math utilities shared by panes/renderers."""
 
 from __future__ import annotations
 

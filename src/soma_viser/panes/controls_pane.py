@@ -1,4 +1,4 @@
-"""Controls tab controller for SomaViewer."""
+"""Controls tab pane for SomaViewer."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Any
 import numpy as np
 import viser
 
+from .context import PaneContext
 from ..io_bvh import estimate_bvh_units_per_meter, extract_bvh_motion_rows
 from ..render.joint_overrides import (
   euler_zyx_deg_to_wxyz,
@@ -16,11 +17,12 @@ from ..render.joint_overrides import (
 )
 
 
-class ControlsController:
+class ControlsPane:
   """Owns Controls tab UI and callbacks."""
 
-  def __init__(self, viewer: Any) -> None:
-    self.viewer = viewer
+  def __init__(self, context: PaneContext) -> None:
+    self.context = context
+    self.viewer = context.viewer
 
   def build_tab(self) -> None:
     v = self.viewer
@@ -212,15 +214,12 @@ class ControlsController:
         h.visible = v._show_joint_knobs
 
   def attach(self, *_args: Any, **_kwargs: Any) -> None:
-    """Stable controller contract used by downstream integrations."""
     self.build_tab()
 
   def tick(self, _dt: float) -> None:
-    """Controls tab does not require a periodic update."""
     return None
 
   def dispose(self) -> None:
-    """No explicit resources to dispose."""
     return None
 
   def rebuild_main_joint_controls(self) -> None:

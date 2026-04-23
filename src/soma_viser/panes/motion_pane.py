@@ -1,4 +1,4 @@
-"""Motion tab controller for SomaViewer."""
+"""Motion tab pane for SomaViewer."""
 
 from __future__ import annotations
 
@@ -8,6 +8,7 @@ from typing import Any
 
 import viser
 
+from .context import PaneContext
 from ..motion import MotionEntry, index_bvh_files
 from ..viz.playback import update_speed_index
 
@@ -16,11 +17,12 @@ _MOTION_FOLDER_SHOW_THRESHOLD = 120
 _MOTION_SEARCH_DEBOUNCE_SEC = 0.2
 
 
-class MotionController:
+class MotionPane:
   """Owns Motion tab UI and filtering callbacks."""
 
-  def __init__(self, viewer: Any, pose_keyframes: dict[str, Path]) -> None:
-    self.viewer = viewer
+  def __init__(self, context: PaneContext, pose_keyframes: dict[str, Path]) -> None:
+    self.context = context
+    self.viewer = context.viewer
     self.pose_keyframes = pose_keyframes
 
   def build_tab(self) -> None:
@@ -112,18 +114,15 @@ class MotionController:
     self.refresh_motion_library()
 
   def attach(self, *_args: Any, **_kwargs: Any) -> None:
-    """Stable controller contract used by downstream integrations."""
     self.build_tab()
 
   def tick(self, _dt: float) -> None:
-    """Process pending debounced UI work."""
     v = self.viewer
     if v._motion_search_pending and time.perf_counter() >= v._motion_search_deadline:
       v._motion_search_pending = False
       self.apply_motion_filters()
 
   def dispose(self) -> None:
-    """No explicit resources to dispose."""
     return None
 
   def refresh_motion_library(self) -> None:

@@ -10,27 +10,24 @@ from typing import Any
 import numpy as np
 import viser
 
-from .controllers.controls_controller import ControlsController
-from .controllers.motion_controller import MotionController
-from .controllers.visualization_controller import VisualizationController
+from .panes.context import PaneContext
+from .panes.controls_pane import ControlsPane
+from .panes.motion_pane import MotionPane
+from .panes.visualization_pane import VisualizationPane
 from .mesh_skinner import WarpMeshSkinner, try_load_soma_skeletal_mesh
 from .io_bvh import parse_bvh_channel_map
-from .motion import MotionClip, MotionEntry, index_bvh_files, load_motion_clip
+from .motion import MotionClip, load_motion_clip
 from .render.pipeline import RenderPipeline
-from .state.session import PlaybackState
+from .state.session import PlaybackState, SessionState
 from .skeleton import (
   decode_joint_name,
 )
 from .viz.joint_inspector import JointInspector
 from .viz.joints import resolve_hips_joint_name
-from .viz.playback import DEFAULT_SPEEDS, advance_playback, update_speed_index
+from .viz.playback import DEFAULT_SPEEDS, advance_playback
 from .viz.status import build_status_html
 
 _SPEEDS = DEFAULT_SPEEDS
-_MOTION_MAX_OPTIONS = 300
-_MOTION_FOLDER_SHOW_THRESHOLD = 120
-_MOTION_SEARCH_DEBOUNCE_SEC = 0.2
-
 POSE_KEYFRAMES: dict[str, Path] = {
   "Calibration (frame0)": Path(__file__).resolve().parent / "assets" / "poses" / "soma_zero.bvh",
   "T pose": Path(__file__).resolve().parent / "assets" / "poses" / "soma_tpose.bvh",
@@ -53,32 +50,16 @@ class SomaViewer:
     self._lock = RLock()
 
     self._clip: MotionClip | None = None
-    self._session = PlaybackState(
-      playing=True,
-      loop=True,
-      speed_idx=_SPEEDS.index(1.0),
-      accumulator=0.0,
-      frame_idx=0,
-      needs_redraw=True,
+    self._session = SessionState(
+      playback=PlaybackState(
+        playing=True,
+        loop=True,
+        speed_idx=_SPEEDS.index(1.0),
+        accumulator=0.0,
+        frame_idx=0,
+        needs_redraw=True,
+      )
     )
-    self._playing = self._session.playing
-    self._loop = self._session.loop
-    self._speed_idx = self._session.speed_idx
-    self._accumulator = self._session.accumulator
-    self._frame_idx = self._session.frame_idx
-    self._needs_redraw = self._session.needs_redraw
-
-    self._skeleton_color = (160, 220, 100)
-    self._line_width = 2.8
-    self._mesh_color = (195, 170, 215)
-    self._mesh_opacity = 0.45
-    self._root_offset = np.array([0.0, 0.0, 0.0], dtype=np.float64)
-    self._align_euler = np.array([90.0, 0.0, 90.0], dtype=np.float64)
-    self._body_scale = 1.0
-    self._show_skeleton = True
-    self._show_mesh = True
-    self._show_frame_text = True
-    self._show_frame_text_full_info = True
     self._joint_names: list[str] = []
     self._joint_name_to_idx: dict[str, int] = {}
     self._hips_joint_name: str | None = None
@@ -106,26 +87,19 @@ class SomaViewer:
     self._motion_search_text: Any = None
     self._motion_folder_dropdown: Any = None
     self._motion_page_text: Any = None
-    self._motion_entries: list[MotionEntry] = []
-    self._motion_filtered_entries: list[MotionEntry] = []
-    self._motion_entry_by_relpath: dict[str, MotionEntry] = {}
-    self._motion_folder_counts: dict[str, int] = {}
-    self._motion_search_pending = False
-    self._motion_search_deadline = 0.0
-    self._suppress_motion_ui = False
     self._joint_inspector: JointInspector | None = None
     self._main_joint_controls: dict[str, Any] = {}
     self._main_joint_overrides_deg: dict[str, np.ndarray] = {}
     self._main_joint_display_deg: dict[str, np.ndarray] = {}
     self._main_joint_knobs: dict[str, viser.TransformControlsHandle] = {}
-    self._show_joint_knobs = True
     self._suppress_joint_ui = False
     self._bvh_channel_map: dict[str, tuple[int, list[str]]] = {}
     self._last_rendered_row: Any | None = None
 
-    self._motion_controller = MotionController(self, POSE_KEYFRAMES)
-    self._visualization_controller = VisualizationController(self)
-    self._controls_controller = ControlsController(self)
+    pane_context = PaneContext(viewer=self, session=self._session)
+    self._motion_pane = MotionPane(pane_context, POSE_KEYFRAMES)
+    self._visualization_pane = VisualizationPane(pane_context)
+    self._controls_pane = ControlsPane(pane_context)
     self._render_pipeline = RenderPipeline(self)
 
     self._build_gui()
@@ -135,33 +109,218 @@ class SomaViewer:
   def _speed(self) -> float:
     return _SPEEDS[self._speed_idx]
 
+  @property
+  def _playing(self) -> bool:
+    return bool(self._session.playback.playing)
+
+  @_playing.setter
+  def _playing(self, value: bool) -> None:
+    self._session.playback.playing = bool(value)
+
+  @property
+  def _loop(self) -> bool:
+    return bool(self._session.playback.loop)
+
+  @_loop.setter
+  def _loop(self, value: bool) -> None:
+    self._session.playback.loop = bool(value)
+
+  @property
+  def _speed_idx(self) -> int:
+    return int(self._session.playback.speed_idx)
+
+  @_speed_idx.setter
+  def _speed_idx(self, value: int) -> None:
+    self._session.playback.speed_idx = int(value)
+
+  @property
+  def _accumulator(self) -> float:
+    return float(self._session.playback.accumulator)
+
+  @_accumulator.setter
+  def _accumulator(self, value: float) -> None:
+    self._session.playback.accumulator = float(value)
+
+  @property
+  def _frame_idx(self) -> int:
+    return int(self._session.playback.frame_idx)
+
+  @_frame_idx.setter
+  def _frame_idx(self, value: int) -> None:
+    self._session.playback.frame_idx = int(value)
+
+  @property
+  def _needs_redraw(self) -> bool:
+    return bool(self._session.playback.needs_redraw)
+
+  @_needs_redraw.setter
+  def _needs_redraw(self, value: bool) -> None:
+    self._session.playback.needs_redraw = bool(value)
+
+  @property
+  def _skeleton_color(self) -> tuple[int, int, int]:
+    return self._session.visual.skeleton_color
+
+  @_skeleton_color.setter
+  def _skeleton_color(self, value: tuple[int, int, int]) -> None:
+    self._session.visual.skeleton_color = tuple(int(c) for c in value)
+
+  @property
+  def _line_width(self) -> float:
+    return float(self._session.visual.line_width)
+
+  @_line_width.setter
+  def _line_width(self, value: float) -> None:
+    self._session.visual.line_width = float(value)
+
+  @property
+  def _mesh_color(self) -> tuple[int, int, int]:
+    return self._session.visual.mesh_color
+
+  @_mesh_color.setter
+  def _mesh_color(self, value: tuple[int, int, int]) -> None:
+    self._session.visual.mesh_color = tuple(int(c) for c in value)
+
+  @property
+  def _mesh_opacity(self) -> float:
+    return float(self._session.visual.mesh_opacity)
+
+  @_mesh_opacity.setter
+  def _mesh_opacity(self, value: float) -> None:
+    self._session.visual.mesh_opacity = float(value)
+
+  @property
+  def _root_offset(self) -> np.ndarray:
+    return self._session.visual.root_offset
+
+  @_root_offset.setter
+  def _root_offset(self, value: np.ndarray) -> None:
+    self._session.visual.root_offset = np.asarray(value, dtype=np.float64)
+
+  @property
+  def _align_euler(self) -> np.ndarray:
+    return self._session.visual.align_euler
+
+  @_align_euler.setter
+  def _align_euler(self, value: np.ndarray) -> None:
+    self._session.visual.align_euler = np.asarray(value, dtype=np.float64)
+
+  @property
+  def _body_scale(self) -> float:
+    return float(self._session.visual.body_scale)
+
+  @_body_scale.setter
+  def _body_scale(self, value: float) -> None:
+    self._session.visual.body_scale = float(value)
+
+  @property
+  def _show_skeleton(self) -> bool:
+    return bool(self._session.visual.show_skeleton)
+
+  @_show_skeleton.setter
+  def _show_skeleton(self, value: bool) -> None:
+    self._session.visual.show_skeleton = bool(value)
+
+  @property
+  def _show_mesh(self) -> bool:
+    return bool(self._session.visual.show_mesh)
+
+  @_show_mesh.setter
+  def _show_mesh(self, value: bool) -> None:
+    self._session.visual.show_mesh = bool(value)
+
+  @property
+  def _show_frame_text(self) -> bool:
+    return bool(self._session.visual.show_frame_text)
+
+  @_show_frame_text.setter
+  def _show_frame_text(self, value: bool) -> None:
+    self._session.visual.show_frame_text = bool(value)
+
+  @property
+  def _show_frame_text_full_info(self) -> bool:
+    return bool(self._session.visual.show_frame_text_full_info)
+
+  @_show_frame_text_full_info.setter
+  def _show_frame_text_full_info(self, value: bool) -> None:
+    self._session.visual.show_frame_text_full_info = bool(value)
+
+  @property
+  def _show_joint_knobs(self) -> bool:
+    return bool(self._session.visual.show_joint_knobs)
+
+  @_show_joint_knobs.setter
+  def _show_joint_knobs(self, value: bool) -> None:
+    self._session.visual.show_joint_knobs = bool(value)
+
+  @property
+  def _motion_entries(self) -> list[Any]:
+    return self._session.motion.entries
+
+  @_motion_entries.setter
+  def _motion_entries(self, value: list[Any]) -> None:
+    self._session.motion.entries = value
+
+  @property
+  def _motion_filtered_entries(self) -> list[Any]:
+    return self._session.motion.filtered_entries
+
+  @_motion_filtered_entries.setter
+  def _motion_filtered_entries(self, value: list[Any]) -> None:
+    self._session.motion.filtered_entries = value
+
+  @property
+  def _motion_entry_by_relpath(self) -> dict[str, Any]:
+    return self._session.motion.entry_by_relpath
+
+  @_motion_entry_by_relpath.setter
+  def _motion_entry_by_relpath(self, value: dict[str, Any]) -> None:
+    self._session.motion.entry_by_relpath = value
+
+  @property
+  def _motion_folder_counts(self) -> dict[str, int]:
+    return self._session.motion.folder_counts
+
+  @_motion_folder_counts.setter
+  def _motion_folder_counts(self, value: dict[str, int]) -> None:
+    self._session.motion.folder_counts = value
+
+  @property
+  def _motion_search_pending(self) -> bool:
+    return bool(self._session.motion.search_pending)
+
+  @_motion_search_pending.setter
+  def _motion_search_pending(self, value: bool) -> None:
+    self._session.motion.search_pending = bool(value)
+
+  @property
+  def _motion_search_deadline(self) -> float:
+    return float(self._session.motion.search_deadline)
+
+  @_motion_search_deadline.setter
+  def _motion_search_deadline(self, value: float) -> None:
+    self._session.motion.search_deadline = float(value)
+
+  @property
+  def _suppress_motion_ui(self) -> bool:
+    return bool(self._session.motion.suppress_motion_ui)
+
+  @_suppress_motion_ui.setter
+  def _suppress_motion_ui(self, value: bool) -> None:
+    self._session.motion.suppress_motion_ui = bool(value)
+
   def _build_gui(self) -> None:
     tabs = self.server.gui.add_tab_group()
     with tabs.add_tab("Motion", icon=viser.Icon.PLAYER_PLAY):
-      self._motion_controller.attach(gui_tab="Motion", server=self.server, session_state=self)
+      self._motion_pane.attach(gui_tab="Motion", server=self.server, session_state=self)
     with tabs.add_tab("Visualization", icon=viser.Icon.EYE):
-      self._visualization_controller.attach(gui_tab="Visualization", server=self.server, session_state=self)
+      self._visualization_pane.attach(gui_tab="Visualization", server=self.server, session_state=self)
     with tabs.add_tab("Controls", icon=viser.Icon.SETTINGS):
-      self._controls_controller.attach(gui_tab="Controls", server=self.server, session_state=self)
-
-  def _build_motion_tab(self) -> None:
-    self._motion_controller.build_tab()
-
-  def _refresh_motion_library(self) -> None:
-    self._motion_controller.refresh_motion_library()
-
-  def _apply_motion_filters(self) -> None:
-    self._motion_controller.apply_motion_filters()
-
-  def _build_visualization_tab(self) -> None:
-    self._visualization_controller.build_tab()
-
-  def _build_controls_tab(self) -> None:
-    self._controls_controller.build_tab()
+      self._controls_pane.attach(gui_tab="Controls", server=self.server, session_state=self)
 
   def _load_initial_clip(self) -> None:
     if not self._motion_entries:
-      self._refresh_motion_library()
+      self._motion_pane.refresh_motion_library()
     if not self._motion_entries:
       self._update_status_text("No BVH clips found.")
       return
@@ -214,7 +373,7 @@ class SomaViewer:
     self._update_status_text()
 
   def _rebuild_main_joint_controls(self) -> None:
-    self._controls_controller.rebuild_main_joint_controls()
+    self._controls_pane.rebuild_main_joint_controls()
 
   def _init_mesh_skinner(self) -> None:
     self._mesh_skinner = None
@@ -251,13 +410,10 @@ class SomaViewer:
   def _scale_about_pivot(self, xyz: np.ndarray, pivot: np.ndarray, s: float) -> np.ndarray:
     return pivot + float(s) * (xyz - pivot)
 
-  def _redraw(self, frame_idx: int) -> None:
-    self._render_pipeline.redraw(frame_idx)
-
   def _tick(self, dt: float) -> None:
-    self._motion_controller.tick(dt)
-    self._visualization_controller.tick(dt)
-    self._controls_controller.tick(dt)
+    self._motion_pane.tick(dt)
+    self._visualization_pane.tick(dt)
+    self._controls_pane.tick(dt)
 
     if self._clip is None:
       return
@@ -283,7 +439,7 @@ class SomaViewer:
 
     if self._needs_redraw:
       with self._lock:
-        self._redraw(self._frame_idx)
+        self._render_pipeline.redraw(self._frame_idx)
       self._needs_redraw = False
 
   def run(self) -> None:

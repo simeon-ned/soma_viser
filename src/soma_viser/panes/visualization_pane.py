@@ -1,17 +1,19 @@
-"""Visualization tab controller for SomaViewer."""
+"""Visualization tab pane for SomaViewer."""
 
 from __future__ import annotations
 
 from typing import Any
 
+from .context import PaneContext
 from ..viz.joint_inspector import JointInspector
 
 
-class VisualizationController:
+class VisualizationPane:
   """Owns Visualization tab UI and callbacks."""
 
-  def __init__(self, viewer: Any) -> None:
-    self.viewer = viewer
+  def __init__(self, context: PaneContext) -> None:
+    self.context = context
+    self.viewer = context.viewer
 
   def build_tab(self) -> None:
     v = self.viewer
@@ -87,13 +89,10 @@ class VisualizationController:
       v._needs_redraw = True
 
   def attach(self, *_args: Any, **_kwargs: Any) -> None:
-    """Stable controller contract used by downstream integrations."""
     self.build_tab()
 
   def tick(self, _dt: float) -> None:
-    """Visualization tab does not require a periodic update."""
     return None
 
   def dispose(self) -> None:
-    """No explicit resources to dispose."""
     return None

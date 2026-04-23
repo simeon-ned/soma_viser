@@ -12,7 +12,7 @@ import viser
 import viser.transforms as tf
 
 from .mesh_skinner import WarpMeshSkinner, try_load_soma_skeletal_mesh
-from .motion import MotionClip, list_bvh_files, load_motion_clip
+from .motion import MotionClip, MotionEntry, index_bvh_files, load_motion_clip
 from .skeleton import (
   build_bone_segments,
   decode_joint_name,
@@ -25,6 +25,7 @@ from .viz.playback import DEFAULT_SPEEDS, advance_playback, update_speed_index
 from .viz.status import build_status_html
 
 _SPEEDS = DEFAULT_SPEEDS
+_MOTION_MAX_OPTIONS = 300
 
 _POSE_KEYFRAMES: dict[str, Path] = {
   "Calibration (frame0)": Path(__file__).resolve().parent / "assets" / "poses" / "soma_zero.bvh",
@@ -203,6 +204,13 @@ class SomaViewer:
     self._status_html: Any = None
     self._frame_slider: Any = None
     self._motion_dropdown: Any = None
+    self._motion_search_text: Any = None
+    self._motion_folder_dropdown: Any = None
+    self._motion_page_text: Any = None
+    self._motion_entries: list[MotionEntry] = []
+    self._motion_filtered_entries: list[MotionEntry] = []
+    self._motion_entry_by_relpath: dict[str, MotionEntry] = {}
+    self._suppress_motion_ui = False
     self._joint_inspector: JointInspector | None = None
     self._main_joint_controls: dict[str, Any] = {}
     self._main_joint_overrides_deg: dict[str, np.ndarray] = {}
@@ -230,14 +238,24 @@ class SomaViewer:
       self._build_controls_tab()
 
   def _build_motion_tab(self) -> None:
-    motion_files = list_bvh_files(self.motions_dir)
-    motion_names = [p.name for p in motion_files] or ["(no .bvh files found)"]
-
+    self._motion_search_text = self.server.gui.add_text("Search clips", initial_value="")
+    self._motion_folder_dropdown = self.server.gui.add_dropdown(
+      "Folder",
+      options=["(all folders)"],
+      initial_value="(all folders)",
+    )
     self._motion_dropdown = self.server.gui.add_dropdown(
       "Motion clip",
-      options=motion_names,
-      initial_value=motion_names[0],
+      options=["(no .bvh files found)"],
+      initial_value="(no .bvh files found)",
     )
+    refresh_btn = self.server.gui.add_button("Refresh library")
+    self._motion_page_text = self.server.gui.add_text(
+      "Results",
+      initial_value="No clips indexed.",
+      disabled=True,
+    )
+
     self._frame_slider = self.server.gui.add_slider(
       "Frame",
       min=0,
@@ -257,11 +275,28 @@ class SomaViewer:
       initial_value="Calibration (frame0)",
     )
 
+    @self._motion_search_text.on_update
+    def _(_) -> None:
+      self._apply_motion_filters()
+
+    @self._motion_folder_dropdown.on_update
+    def _(_) -> None:
+      if self._suppress_motion_ui:
+        return
+      self._apply_motion_filters()
+
     @self._motion_dropdown.on_update
     def _(_) -> None:
-      if self._motion_dropdown.value.startswith("("):
+      if self._suppress_motion_ui:
         return
-      self._load_clip_by_name(self._motion_dropdown.value)
+      selected = str(self._motion_dropdown.value)
+      if selected.startswith("("):
+        return
+      self._load_clip_by_relpath(selected)
+
+    @refresh_btn.on_click
+    def _(_) -> None:
+      self._refresh_motion_library()
 
     @self._frame_slider.on_update
     def _(_) -> None:
@@ -294,6 +329,77 @@ class SomaViewer:
         self._update_status_text("Pose keyframe file not found.")
         return
       self._load_clip_by_path(pose_path)
+
+    self._refresh_motion_library()
+
+  def _refresh_motion_library(self) -> None:
+    self._motion_entries = index_bvh_files(self.motions_dir, recursive=True)
+    self._motion_entry_by_relpath = {e.rel_path: e for e in self._motion_entries}
+
+    folder_names = {"(all folders)"}
+    for entry in self._motion_entries:
+      parent = Path(entry.rel_path).parent.as_posix()
+      folder_names.add(parent if parent not in ("", ".") else ".")
+    folder_options = sorted(folder_names, key=lambda v: (v != "(all folders)", v.lower()))
+
+    if self._motion_folder_dropdown is not None:
+      old_value = str(self._motion_folder_dropdown.value)
+      self._suppress_motion_ui = True
+      try:
+        self._motion_folder_dropdown.options = folder_options
+        self._motion_folder_dropdown.value = (
+          old_value if old_value in folder_options else "(all folders)"
+        )
+      finally:
+        self._suppress_motion_ui = False
+    self._apply_motion_filters()
+
+  def _apply_motion_filters(self) -> None:
+    query = ""
+    folder = "(all folders)"
+    if self._motion_search_text is not None:
+      query = str(self._motion_search_text.value).strip().lower()
+    if self._motion_folder_dropdown is not None:
+      folder = str(self._motion_folder_dropdown.value)
+
+    terms = [t for t in query.split() if t]
+    filtered: list[MotionEntry] = []
+    for entry in self._motion_entries:
+      rel = entry.rel_path.lower()
+      parent = Path(entry.rel_path).parent.as_posix()
+      parent = parent if parent not in ("", ".") else "."
+      if folder != "(all folders)" and parent != folder:
+        continue
+      if terms and not all(term in rel for term in terms):
+        continue
+      filtered.append(entry)
+    self._motion_filtered_entries = filtered
+    visible_entries = filtered[:_MOTION_MAX_OPTIONS]
+    options = [e.rel_path for e in visible_entries] or ["(no matches)"]
+    selected = options[0]
+    if self._motion_dropdown is not None:
+      old_selected = str(self._motion_dropdown.value)
+      if old_selected in options:
+        selected = old_selected
+      self._suppress_motion_ui = True
+      try:
+        self._motion_dropdown.options = options
+        self._motion_dropdown.value = selected
+      finally:
+        self._suppress_motion_ui = False
+
+    if self._motion_page_text is not None:
+      if not filtered:
+        self._motion_page_text.value = "No clips match current filters."
+      else:
+        shown = len(visible_entries)
+        if shown < len(filtered):
+          self._motion_page_text.value = (
+            f"Showing first {shown} of {len(filtered)} clips. "
+            "Type more in Search clips to narrow results."
+          )
+        else:
+          self._motion_page_text.value = f"Showing {shown} clip(s)."
 
   def _build_visualization_tab(self) -> None:
     show_skeleton_cb = self.server.gui.add_checkbox("Show skeleton", initial_value=True)
@@ -585,18 +691,30 @@ class SomaViewer:
         h.visible = self._show_joint_knobs
 
   def _load_initial_clip(self) -> None:
-    files = list_bvh_files(self.motions_dir)
-    if not files:
+    if not self._motion_entries:
+      self._refresh_motion_library()
+    if not self._motion_entries:
       self._update_status_text("No BVH clips found.")
       return
-    self._load_clip_by_name(files[0].name)
+    self._load_clip_by_path(self._motion_entries[0].path)
 
-  def _load_clip_by_name(self, name: str) -> None:
-    path = self.motions_dir / name
-    self._load_clip_by_path(path)
+  def _load_clip_by_relpath(self, rel_path: str) -> None:
+    entry = self._motion_entry_by_relpath.get(rel_path)
+    if entry is None:
+      candidate = self.motions_dir / rel_path
+      if candidate.is_file():
+        self._load_clip_by_path(candidate)
+      else:
+        self._update_status_text(f"Clip not found: {rel_path}")
+      return
+    self._load_clip_by_path(entry.path)
 
   def _load_clip_by_path(self, path: Path) -> None:
     clip = load_motion_clip(path)
+    try:
+      clip.name = path.relative_to(self.motions_dir).as_posix()
+    except ValueError:
+      clip.name = path.name
     self._clip = clip
     self._frame_idx = 0
     self._accumulator = 0.0

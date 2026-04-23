@@ -40,9 +40,18 @@ class JointInspector:
     self._category_folders.clear()
 
     for row in self.rows:
-      row.checkbox.remove()
-      row.frame_handle.remove()
-      row.scene_label.remove()
+      try:
+        row.checkbox.remove()
+      except Exception:
+        pass
+      try:
+        row.frame_handle.remove()
+      except Exception:
+        pass
+      try:
+        row.scene_label.remove()
+      except Exception:
+        pass
     self.rows.clear()
 
     grouped: dict[str, list[str]] = {

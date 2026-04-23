@@ -284,7 +284,7 @@ ROOT Root
 												CHANNELS 6 Xposition Yposition Zposition Zrotation Yrotation Xrotation
 												JOINT RightHandIndex4
 												{
-													OFFSET -2.32084359547553 -1.029351039960602e-07 4.6183937563171185e-08 -2.252148826678165 -3.7395695961024567 -2.3445189499106274
+													OFFSET -2.32084359547553 -1.029351039960602e-07 4.6183937563171185e-08 -2.3445189499106274 -3.7395695961024567 -2.252148826678165
 													CHANNELS 6 Xposition Yposition Zposition Zrotation Yrotation Xrotation
 													JOINT RightHandIndexEnd
 													{

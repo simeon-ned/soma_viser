@@ -7,6 +7,15 @@ from pathlib import Path
 from typing import Any
 
 
+@dataclass(frozen=True)
+class MotionEntry:
+  """Indexed metadata for one BVH file in the clip library."""
+
+  rel_path: str
+  name: str
+  path: Path
+
+
 @dataclass
 class MotionClip:
   """A loaded BVH clip and its skeleton metadata."""
@@ -20,10 +29,24 @@ class MotionClip:
 
 
 def list_bvh_files(motions_dir: Path) -> list[Path]:
-  """Return sorted .bvh files in a motion directory."""
+  """Return sorted .bvh files in a motion directory (non-recursive)."""
   if not motions_dir.is_dir():
     return []
   return sorted(p for p in motions_dir.glob("*.bvh") if p.is_file())
+
+
+def index_bvh_files(motions_dir: Path, recursive: bool = True) -> list[MotionEntry]:
+  """Return sorted BVH library entries, optionally including subfolders."""
+  if not motions_dir.is_dir():
+    return []
+  iter_paths = motions_dir.rglob("*.bvh") if recursive else motions_dir.glob("*.bvh")
+  entries: list[MotionEntry] = []
+  for path in iter_paths:
+    if not path.is_file():
+      continue
+    rel_path = path.relative_to(motions_dir).as_posix()
+    entries.append(MotionEntry(rel_path=rel_path, name=path.name, path=path))
+  return sorted(entries, key=lambda e: e.rel_path.lower())
 
 
 def load_motion_clip(path: Path) -> MotionClip:

@@ -1,4 +1,4 @@
-"""Skeleton extraction and segment generation helpers."""
+"""Skeleton math and rendering helpers."""
 
 from __future__ import annotations
 
@@ -39,8 +39,6 @@ def joint_xyz_quat_from_globals(globals_tx: Any, num_joints: int) -> tuple[np.nd
   quat_xyzw = np.zeros((num_joints, 4), dtype=np.float64)
   arr = np.asarray(globals_tx)
 
-  # Fast path for packed float arrays, commonly shaped (J, 7):
-  # [tx, ty, tz, qx, qy, qz, qw].
   if arr.ndim == 2 and arr.shape[0] == num_joints and arr.dtype.kind in "fc":
     if arr.shape[1] >= 3:
       xyz[:, :] = arr[:, :3].astype(np.float64)
@@ -100,13 +98,9 @@ def build_bone_segments(
       out.append(np.stack([a, b], axis=0))
     return out
 
-  # Match humo_target behavior.
   segs = _collect(filter_root_hips=True)
   if not segs:
     segs = _collect(filter_root_hips=False)
-
-  # Fallback: if hierarchy links failed (bad parents or naming/layout mismatch),
-  # still draw a continuous polyline over consecutive joints so skeleton remains visible.
   if not segs:
     for j in range(1, num_joints):
       _append_if_valid(joint_xyz[j - 1], joint_xyz[j])
@@ -114,8 +108,22 @@ def build_bone_segments(
   if not segs:
     return np.zeros((0, 2, 3), dtype=np.float32)
   out = np.stack(segs, axis=0).astype(np.float32)
-  # Final finite filter for extra safety.
   finite_mask = np.isfinite(out).all(axis=(1, 2))
   if not finite_mask.any():
     return np.zeros((0, 2, 3), dtype=np.float32)
   return out[finite_mask]
+
+
+def render_skeleton(viewer: Any, segments: np.ndarray) -> None:
+  """Render skeleton lines and preserve last known valid segment set."""
+  viewer._line_handle.visible = viewer._show_skeleton
+  if len(segments) > 0:
+    base_rgb = np.array(viewer._skeleton_color, dtype=np.uint8).reshape(1, 1, 3)
+    viewer._line_handle.points = segments
+    viewer._line_handle.colors = np.broadcast_to(base_rgb, (segments.shape[0], 2, 3))
+    viewer._last_skeleton_segments = segments
+    return
+  if viewer._last_skeleton_segments is not None:
+    base_rgb = np.array(viewer._skeleton_color, dtype=np.uint8).reshape(1, 1, 3)
+    viewer._line_handle.points = viewer._last_skeleton_segments
+    viewer._line_handle.colors = np.broadcast_to(base_rgb, (viewer._last_skeleton_segments.shape[0], 2, 3))

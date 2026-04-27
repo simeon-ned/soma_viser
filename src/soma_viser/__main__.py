@@ -1,17 +1,13 @@
 """CLI entrypoint for soma_viser."""
-
 from __future__ import annotations
 
 import argparse
 from pathlib import Path
 
-from .viewer import SomaViewer
-
+from .app import SomaViewer
 
 def _default_motions_dir() -> Path:
-  # Project-local clip library: <repo>/motions.
   return Path(__file__).resolve().parents[2] / "motions"
-
 
 def main() -> None:
   parser = argparse.ArgumentParser(
@@ -36,7 +32,6 @@ def main() -> None:
     help="Scene up axis (default: +z).",
   )
   args = parser.parse_args()
-
   viewer = SomaViewer(
     motions_dir=args.motions_dir,
     port=args.port,
